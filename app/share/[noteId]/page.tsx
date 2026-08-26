@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 
 export default function SharedNote() {
   const params = useParams();
@@ -17,29 +15,41 @@ export default function SharedNote() {
       try {
         const [uid, noteId] = combined.split("_");
         if (!uid || !noteId) {
-          setError("Invalid share link (missing uid or noteId).");
+          setError("Invalid share link.");
           setLoading(false);
           return;
         }
-        const ref = doc(db, `users/${uid}/notes/${noteId}`);
-        const snap = await getDoc(ref);
 
-        if (!snap.exists()) {
-          setError("Note not found in database.");
+        const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/notes/${noteId}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!res.ok || !data.fields) {
+          setError("Note not found.");
+          setLoading(false);
+          return;
+        }
+
+        const fields = data.fields;
+        const shared = fields.shared?.booleanValue === true;
+        const shareExpiresAt = fields.shareExpiresAt?.timestampValue
+          ? new Date(fields.shareExpiresAt.timestampValue)
+          : null;
+
+        const expired = !shared || (shareExpiresAt && shareExpiresAt < new Date());
+
+        if (expired) {
+          setError("This share link has expired or is no longer active.");
         } else {
-          const data = snap.data();
-          const expired =
-            !data.shared ||
-            (data.shareExpiresAt && data.shareExpiresAt.toDate() < new Date());
-          if (expired) {
-            setError("This share link has expired or is no longer active.");
-          } else {
-            setNote(data);
-          }
+          setNote({
+            title: fields.title?.stringValue || "Untitled",
+            body: fields.body?.stringValue || "",
+          });
         }
       } catch (err: any) {
-        console.error("Share page error:", err);
-        setError(`Error: ${err.message || "unknown error"}`);
+        setError("This note is not available or the link is invalid.");
       } finally {
         setLoading(false);
       }
