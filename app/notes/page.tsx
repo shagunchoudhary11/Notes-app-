@@ -11,21 +11,17 @@ export default function Notes() {
   const [user, setUser] = useState<User | null>(null);
   const [notes, setNotes] = useState<any[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const router = useRouter();
 
-  // Check login state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
-      if (!u) {
-        router.push("/");
-      } else {
-        setUser(u);
-      }
+      if (!u) router.push("/");
+      else setUser(u);
     });
     return () => unsub();
   }, [router]);
 
-  // Watch notes in real-time
   useEffect(() => {
     if (!user) return;
     const unsub = watchNotes(user.uid, setNotes);
@@ -33,6 +29,14 @@ export default function Notes() {
   }, [user]);
 
   const activeNote = notes.find((n) => n.id === activeId);
+
+  const q = search.trim().toLowerCase();
+  const visibleNotes = notes.filter((n) =>
+    !q ||
+    (n.title || "").toLowerCase().includes(q) ||
+    (n.body || "").toLowerCase().includes(q) ||
+    (n.tagsText || "").toLowerCase().includes(q)
+  );
 
   async function handleNewNote() {
     if (!user) return;
@@ -55,73 +59,87 @@ export default function Notes() {
     if (!user || !activeNote) return;
     const newShared = !activeNote.shared;
     const shareExpiresAt = newShared
-      ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+      ? new Date(Date.now() + 24 * 60 * 60 * 1000)
       : null;
     await updateNote(user.uid, activeNote.id, { shared: newShared, shareExpiresAt });
   }
 
-  if (!user) return <p style={{ padding: 20 }}>Loading...</p>;
+  const chips = (text?: string) =>
+    (text || "").split(",").map((t) => t.trim()).filter(Boolean);
+
+  if (!user) return <p className="nt-loading">Loading...</p>;
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      {/* Sidebar */}
-      <div style={{ width: 260, borderRight: "1px solid #ccc", padding: 16, overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-          <strong>My Notes</strong>
-          <button onClick={() => logOut()}>Log Out</button>
+    <div className="nt-app">
+      <aside className="nt-side">
+        <div className="nt-head">
+          <h2>My Notes</h2>
+          <button className="nt-ghost" onClick={() => logOut()}>Log Out</button>
         </div>
-        <button onClick={handleNewNote} style={{ width: "100%", padding: 8, marginBottom: 12 }}>
-          + New Note
-        </button>
-        {notes.map((note) => (
-          <div
-            key={note.id}
-            onClick={() => setActiveId(note.id)}
-            style={{
-              padding: 8,
-              marginBottom: 6,
-              cursor: "pointer",
-              background: note.id === activeId ? "#eee" : "transparent",
-              borderRadius: 4,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span>{note.title || "Untitled"}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(note.id);
-              }}
-              style={{ fontSize: 12 }}
+        <button className="nt-new" onClick={handleNewNote}>+ New Note</button>
+        <input
+          className="nt-search"
+          placeholder="Search notes or tags..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="nt-list">
+          {visibleNotes.map((note) => (
+            <div
+              key={note.id}
+              className={"nt-item" + (note.id === activeId ? " active" : "")}
+              onClick={() => setActiveId(note.id)}
             >
-              🗑
-            </button>
-          </div>
-        ))}
-      </div>
+              <div className="nt-item-top">
+                <span className="nt-item-title">{note.title || "Untitled"}</span>
+                <button
+                  className="nt-del"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(note.id);
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+              <div className="nt-chips">
+                {chips(note.tagsText).map((t) => (
+                  <span key={t} className="nt-chip">{t}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+          {visibleNotes.length === 0 && <p className="nt-empty">No notes found</p>}
+        </div>
+      </aside>
 
-      {/* Editor */}
-      <div style={{ flex: 1, padding: 24 }}>
+      <main className="nt-main">
         {activeNote ? (
-          <>
+          <div className="nt-card">
             <input
-              value={activeNote.title}
+              className="nt-title"
+              placeholder="Title"
+              value={activeNote.title ?? ""}
               onChange={(e) => handleUpdate("title", e.target.value)}
-              style={{ fontSize: 24, fontWeight: "bold", width: "100%", marginBottom: 12, border: "none", outline: "none" }}
+            />
+            <input
+              className="nt-tags"
+              placeholder="Tags (comma separated)"
+              value={activeNote.tagsText ?? ""}
+              onChange={(e) => handleUpdate("tagsText", e.target.value)}
             />
             <textarea
-              value={activeNote.body}
+              className="nt-body"
+              placeholder="Write your note..."
+              value={activeNote.body ?? ""}
               onChange={(e) => handleUpdate("body", e.target.value)}
-              style={{ width: "100%", height: "60%", fontSize: 16, border: "1px solid #ddd", padding: 12 }}
             />
-            <div style={{ marginTop: 16 }}>
-              <button onClick={handleToggleShare}>
+            <div className="nt-share">
+              <button className="nt-new" onClick={handleToggleShare}>
                 {activeNote.shared ? "Stop Sharing" : "Share (24h link)"}
               </button>
               {activeNote.shared && (
-                <p style={{ marginTop: 8, fontSize: 14 }}>
+                <p>
                   Share this link:{" "}
                   <code>
                     {typeof window !== "undefined"
@@ -131,11 +149,11 @@ export default function Notes() {
                 </p>
               )}
             </div>
-          </>
+          </div>
         ) : (
-          <p>Select a note or create a new one.</p>
+          <p className="nt-placeholder">Select a note or create a new one.</p>
         )}
-      </div>
+      </main>
     </div>
   );
 }
